@@ -1,6 +1,7 @@
 use std::{ffi::CString, net::UdpSocket, os::raw::c_char};
 
 const EMMCPORT: u16 = 24000;
+const BLOCK_SIZE: usize = 256;
 const MAX_UINT64_SIZE: usize = 21;
 const READEB_CMD: &str = "READ_EB";
 // const KEY_VALUE: &str = "YRi55\\GAxgEZD9viP>j8=IUe;oIjYPY\n";
@@ -13,9 +14,9 @@ extern "C" {
 pub fn start_server() -> std::io::Result<()> {
     let server_addr = format!("192.168.2.2:{}", EMMCPORT);
     let socket = UdpSocket::bind(&server_addr)?;
+    println!("[SERVER] server started");
 
     loop {
-        println!("[SERVER] hello");
         let mut buf = [0u8; MAX_UINT64_SIZE];
         let (_, client_addr) = socket.recv_from(&mut buf)?;
 
@@ -29,18 +30,20 @@ pub fn start_server() -> std::io::Result<()> {
         if received_cmd.contains(READEB_CMD) {
             let read_value: *mut c_char = unsafe { read_block() };
             let c_str = unsafe { CString::from_raw(read_value) };
-            let rust_str = c_str.to_str().unwrap();
+            let rust_str_lossy = c_str.to_string_lossy();
+            let rust_str = rust_str_lossy.trim();
             println!("[SERVER] value read from memory {}", rust_str);
             socket.send_to(rust_str.as_bytes(), client_addr)?;
         } else {
             let input_cstring = CString::new(received_cmd).expect("[SERVER] CString conversion failed");
-            let result = unsafe { write_block(input_cstring.as_ptr() as *mut u8) };
+            let result = unsafe { write_block(input_cstring.as_ptr() as *mut c_char) };
 
             if result == 0 {
                 println!("[SERVER] Writing new value {} successful", received_cmd);
             } else {
                 println!("[SERVER] Writing new value {} failed", received_cmd);
             }
+            println!();
         }
     }
 }

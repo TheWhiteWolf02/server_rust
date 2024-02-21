@@ -108,8 +108,9 @@ int write_block(char *input)
     char *block_addr = (char *)"0";
     args[2] = (char *)malloc(strlen(block_addr) * sizeof(char) + 1);
     strcpy(args[2], block_addr);
-    args[3] = (char *)malloc(strlen(input) * sizeof(char));
-    strcpy(args[3], input);
+    args[3] = (char *)malloc(256);
+    memset(args[3], ' ', 256); // ascii value of special character
+    memcpy(args[3], input, strlen(input) * sizeof(char));
     args[4] = (char *)malloc(strlen(key) * sizeof(char));
     strcpy(args[4], key);
     int nargs = 5;
@@ -136,7 +137,7 @@ char *read_block()
     unsigned char **out_mac = (unsigned char **)malloc(sizeof(unsigned char *));
     int nargs = 6;
     char *out = (char *)malloc(atoi(block_count) * 256 * sizeof(char));
-    out = do_rpmb_read_block_if(nargs, args, out_mac);
+    out = do_rpmb_read_block_if(nargs, args, out);
     free_all(args, 5);
     return out;
     // original

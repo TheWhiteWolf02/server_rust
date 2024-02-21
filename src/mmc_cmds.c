@@ -17,6 +17,16 @@
  * those modifications are Copyright (c) 2016 SanDisk Corp.
  */
 
+/*
+[dependencies]
+libc = "0.2"
+bindgen = "0.68.1"
+
+[build-dependencies]
+cc = { version = "1.0", features = ["parallel"] }
+pkg-config = "0.3"
+*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +38,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <assert.h>
+#include <linux/fs.h> /* for BLKGETSIZE */
 #include <sys/time.h>
 #include "mmc.h"
 #include "mmc_cmds.h"
@@ -2496,7 +2507,7 @@ char *do_rpmb_read_block_if(int nargs, char **argv, unsigned char **out_mac)
 	 */
 
 	unsigned int blocks_cnt;
-	unsigned char key[32];
+	unsigned char *key = argv[4];
 	struct rpmb_frame frame_in = {
 						  .req_resp = htobe16(MMC_RPMB_READ),
 					  },
@@ -2544,14 +2555,8 @@ char *do_rpmb_read_block_if(int nargs, char **argv, unsigned char **out_mac)
 		printf("can't allocate memory for RPMB outer frames\n");
 		exit(1);
 	}
-
 	/* Write 256b data */
 	/* Key is specified */
-	for (int i = 0; i < 32; i++)
-	{
-		key[i] = argv[4][i];
-	}
-
 	/* Execute RPMB op */
 	ret = do_rpmb_op(dev_fd, &frame_in, frame_out_p, blocks_cnt);
 	if (ret != 0)
@@ -2569,14 +2574,13 @@ char *do_rpmb_read_block_if(int nargs, char **argv, unsigned char **out_mac)
 	}
 
 	/* Do we have to verify data against key? */
-	unsigned char *key_p = "YRi55\\GAxgEZD9viP>j8=IUe;oIjYPY\n";
 	if (nargs == 6)
 	{
 		unsigned char mac[32];
 		hmac_sha256_ctx ctx;
 		struct rpmb_frame *frame_out = NULL;
 
-		hmac_sha256_init(&ctx, key, sizeof(key));
+		hmac_sha256_init(&ctx, key, 32);
 		for (i = 0; i < blocks_cnt; i++)
 		{
 			frame_out = &frame_out_p[i];
@@ -2585,7 +2589,7 @@ char *do_rpmb_read_block_if(int nargs, char **argv, unsigned char **out_mac)
 								   offsetof(struct rpmb_frame, data));
 		}
 
-		hmac_sha256_final(&ctx, mac, sizeof(mac));
+		hmac_sha256_final(&ctx, mac, 32);
 
 		/* Impossible */
 		assert(frame_out);
@@ -2624,10 +2628,12 @@ char *do_rpmb_read_block_if(int nargs, char **argv, unsigned char **out_mac)
 		//     }
 		//     printf("\n");
 	}
+	/*
 	for (int i = 0; i < 32; i++)
 	{
 		(*out_mac)[i] = (&frame_out_p[0])->key_mac[i];
 	}
+	*/
 	free(frame_out_p);
 	close(dev_fd);
 	return out;
@@ -2832,7 +2838,7 @@ int do_rpmb_write_block_if(int nargs, char **argv)
 	hmac_sha256(
 		key_p, 32,
 		frame_in.data, sizeof(frame_in) - offsetof(struct rpmb_frame, data),
-		key_mac, 32);
+		frame_in.key_mac, sizeof(frame_in.key_mac));
 	/* debug blocks to look into the request parameters. Below one can see
 	 * the hmac source, i.e. the bytes used to generate the hmac */
 	if (debug)
@@ -2846,10 +2852,6 @@ int do_rpmb_write_block_if(int nargs, char **argv)
 		printf("\n");
 	}
 
-	for (int i = 0; i < sizeof(frame_in.key_mac); i++)
-	{
-		frame_in.key_mac[i] = argv[4][i];
-	}
 	/* Execute RPMB op */
 	ret = do_rpmb_op(dev_fd, &frame_in, &frame_out, 1);
 	if (ret != 0)
